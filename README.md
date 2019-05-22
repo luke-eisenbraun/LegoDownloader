@@ -9,6 +9,6 @@ example
 ![Folder Structure](https://github.com/luke-eisenbraun/LegoDownloader/blob/master/lego.png)
 
 To Run:
-Change the storage root on [https://github.com/luke-eisenbraun/LegoDownloader/blob/master/instruction_downloader.py#L11](line 11)
-
+  Change the storage root on [line 11](https://github.com/luke-eisenbraun/LegoDownloader/blob/master/instruction_downloader.py#L11)
+  
 `python3 instruction_downloader.py`
