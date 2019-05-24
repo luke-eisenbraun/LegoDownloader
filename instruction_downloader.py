@@ -11,9 +11,10 @@ logging.basicConfig(level=logging.INFO)
 storage_root = "/mnt/user/Lego/"
 brickset_export = 'https://brickset.com/exportscripts/instructions'
 lego_api = "https://www.lego.com//service/biservice/search?fromIndex=0&locale=en-US&onlyAlternatives=false&prefixText="
+# [:, ", /, ™, ®]
+special_chars = [u"\u003A", u"\u0022", "/", u"\u2122", u"\u00AE"]
 
 existing_list = []
-parsed_list = []
 
 # Get all sets from Brinkset
 response = requests.get(brickset_export)
@@ -25,11 +26,11 @@ response_list.pop(0)
 
 # Attempt to open previously downloaded sets file
 try:
-    f = open ('saved_sets.txt', 'r')
+    f = open ('saved_sets.json', 'r')
     existing_list = simplejson.load(f)
     f.close()
 except IOError:
-    f = open ('saved_sets.txt', 'w')
+    f = open ('saved_sets.json', 'w')
 
 # Loop through all sets
 for i in range(len(response_list)):
@@ -50,13 +51,18 @@ for i in range(len(response_list)):
 
             # Set information
             set_id = set_data["productId"]
-            set_name = set_data["productName"].replace(u"\u2122", '').replace("/", ".")
-            set_theme = set_data["themeName"].replace(u"\u2122", '')
+            set_name = set_data["productName"]
+            set_theme = set_data["themeName"]
             set_year = set_data["launchYear"] 
             set_image = set_data["buildingInstructions"][0]["frontpageInfo"]
 
             instruction_list = {}
             instructions = set_data["buildingInstructions"]
+            
+            # Remove special characters from name
+            for ch in special_chars:
+                set_name = set_name.replace(ch, "")
+                set_theme = set_theme.replace(ch, "")
 
             # Check to see if there are multiple versions/books for set
             if len(instructions) > 1 and bool(re.search('(\s1/|BOOK \d( |$))', instructions[0]['description'])):
@@ -83,7 +89,7 @@ for i in range(len(response_list)):
                     except:
                         logging.warning("Couldn't parse description for book")
 
-                logging.debug("Downloading multiple books for: {}".format(current_set_clean))
+                logging.debug("Downloading multiple books for: {}".format(set_id))
             else:
                 instruction_list[instructions[0]["pdfLocation"]] = "1"
 
@@ -102,15 +108,23 @@ for i in range(len(response_list)):
                 # Download items from LEGO site
                 # Grab all wanted instruction books
                 for url in instruction_list:
-                    urllib.request.urlretrieve(url, "{}/{}-#{}{}".format(set_directory, formatted_set_name, instruction_list[url], ".pdf"))
-                urllib.request.urlretrieve(set_image, "{}/{}{}".format(set_directory, formatted_set_name, ".png"))
+                    try:
+                        urllib.request.urlretrieve(url, "{}/{}-#{}{}".format(set_directory, formatted_set_name, instruction_list[url], ".pdf"))
+                    except:
+                        logging.warning("Problem downloading books for {}".format(set_id))
+                        continue
 
+                try:
+                    urllib.request.urlretrieve(set_image, "{}/{}{}".format(set_directory, formatted_set_name, ".png"))
+                except:
+                    logging.warning("Problem downloading image for {}".format(set_id))
+                    continue
             else:
                 logging.info("Skipping - file path aleady already exists for set: {}".format(set_id))
-        existing_list.append(current_set_clean)
+            
+            existing_list.append(set_id)
     else:
         logging.info("Previously downloaded {}".format(current_set_clean))
-        parsed_list.append(current_set_clean)
 
 if existing_list:
     f = open ('saved_sets.txt', 'w')
