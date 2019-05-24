@@ -37,7 +37,7 @@ for i in range(len(response_list)):
     multiple_books = False
 
     # Get clean set number from brickset
-    current_set = re.search('"(.*)-\d"', response_list[i])
+    current_set = re.search('"(\d*)-\d"', response_list[i])
     current_set_clean = current_set.group(1)
 
     # Check list to make sure we haven't downloaded before
