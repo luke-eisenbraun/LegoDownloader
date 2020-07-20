@@ -51,7 +51,8 @@ for i in range(len(response_list)):
         if current_set_clean not in existing_list:
             # Requests_HTMl seems to have an issue after a bunch of requests
             # so we'll refresh it every so often
-            if i % 10 == 0:
+            if i % 15 == 0:
+                session.close()
                 session = HTMLSession()
 
             web_response = session.get(lego_uri + current_set_clean, timeout=15)
