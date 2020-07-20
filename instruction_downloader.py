@@ -33,6 +33,8 @@ try:
     f.close()
 except IOError:
     f = open ('{}saved_sets.json'.format(storage_root), 'w')
+    json.dump(existing_list, f)
+    f.close()
 
 # Lets download some files
 session = HTMLSession()
@@ -47,10 +49,13 @@ for i in range(len(response_list)):
 
         # Check list to make sure we haven't downloaded before
         if current_set_clean not in existing_list:
-            web_response = session.get(lego_uri + current_set_clean, timeout=10)
-            web_response.html.render()
-            # Sleep helps render be much more reliable
-            time.sleep(.5)
+            # Requests_HTMl seems to have an issue after a bunch of requests
+            # so we'll refresh it every so often
+            if i % 10 == 0:
+                session = HTMLSession()
+
+            web_response = session.get(lego_uri + current_set_clean, timeout=15)
+            web_response.html.render(sleep=.5, timeout=15)
 
             # Get name, theme and release year from page
             set_id = current_set_clean
@@ -65,15 +70,19 @@ for i in range(len(response_list)):
                 set_name = raw_name.split(', ')[1]
             except:
                 set_name = clean_backup_name
-                logging.warning("Issue with set name on set, using backup: {} - {}".format(set_id, set_name))
+                logging.info("Issue with set name on set, using backup: {} - {}".format(set_id, set_name))
 
             try:
                 set_theme = raw_name.split(', ')[2]
             except:
                 set_theme = "Unknown"
 
-            raw_year = web_response.html.find('.c-content', first=True).text
-            set_year = re.search('\d{4}', raw_year).group(0)
+            try:
+                raw_year = web_response.html.find('.c-content', first=True).text
+                set_year = re.search('\d{4}', raw_year).group(0)
+            except:
+                logging.warning("Issue with year, will try again later: {}".format(set_id))
+                continue
 
             #Remove special characters from name
             for ch in special_chars:
@@ -91,6 +100,10 @@ for i in range(len(response_list)):
                     wanted_instructions.append(booklet_link)
             
             # Get set image
+            if not grid:
+                logging.warning("No instructions found for set, will try again later: {}".format(set_id))
+                continue
+
             grid_item = web_response.html.find('.c-card__img', first=True).html
             set_image = re.search('https:.*(jpg|JPG|png|PNG)', grid_item).group(0)
 
