@@ -1,19 +1,22 @@
-import json
-import requests
-import os
+from requests_html import HTMLSession
 import re
+import requests
 import urllib
-import simplejson
 import logging
+import json
+import os
+import time
 
 # Configs
 logging.basicConfig(level=logging.INFO)
 storage_root = "/mnt/user/Lego/"
 brickset_export = 'https://brickset.com/exportscripts/instructions'
-lego_api = "https://www.lego.com//service/biservice/search?fromIndex=0&locale=en-US&onlyAlternatives=false&prefixText="
-# [:, ", /, ™, ®, "?"]
+lego_uri = "https://www.lego.com/en-us/service/buildinginstructions/"
+
+# Special Characters [:, ", /, ™, ®, "?"]
 special_chars = [u"\u003A", u"\u0022", "/", u"\u2122", u"\u00AE", "?"]
 
+# List of previously checked set_ids
 existing_list = []
 
 # Get all sets from Brinkset
@@ -21,112 +24,96 @@ response = requests.get(brickset_export)
 
 # Break giant block of text into list
 response_list = response.text.split('\n')
-# Remove header
 response_list.pop(0)
 
 # Attempt to open previously downloaded sets file
 try:
     f = open ('{}saved_sets.json'.format(storage_root), 'r')
-    existing_list = simplejson.load(f)
+    existing_list = json.load(f)
     f.close()
 except IOError:
     f = open ('{}saved_sets.json'.format(storage_root), 'w')
 
-# Loop through all sets
+# Lets download some files
+session = HTMLSession()
 for i in range(len(response_list)):
-    multiple_books = False
-
-    # Get clean set number from brickset
+     # Get clean set number from brickset
     current_set = re.search('"(\d*)-\d"', response_list[i])
     if current_set is not None:
         current_set_clean = current_set.group(1)
 
         # Check list to make sure we haven't downloaded before
         if current_set_clean not in existing_list:
-            response = requests.get(lego_api + current_set_clean)
-            raw_data = json.loads(response.text)
+            web_response = session.get(lego_uri + current_set_clean)
+            web_response.html.render()
+            # Sleep helps render be much more reliable
+            time.sleep(.5)
 
-            # Some listings contain multiple sets
-            for product in range(len(raw_data["products"])):
-                set_data = raw_data["products"][product]
+            # Get name, theme and release year from page
+            set_id = current_set_clean
+            try:
+                raw_name = web_response.html.find('h1', first=True).text
+                set_name = raw_name.split(', ')[1]
+            except:
+                logging.warning("Issue with set name on set: {}".format(set_id))
+                continue
+            try:
+                set_theme = raw_name.split(', ')[2]
+            except:
+                set_theme = "Unknown"
 
-                # Set information
-                set_id = set_data["productId"]
-                set_name = set_data["productName"]
-                set_theme = set_data["themeName"]
-                set_year = set_data["launchYear"] 
-                set_image = set_data["buildingInstructions"][0]["frontpageInfo"]
+            raw_year = web_response.html.find('.c-content', first=True).text
+            set_year = re.search('\d{4}', raw_year).group(0)
 
-                instruction_list = {}
-                instructions = set_data["buildingInstructions"]
-                
-                # Remove special characters from name
-                for ch in special_chars:
-                    set_name = set_name.replace(ch, "")
-                    set_theme = set_theme.replace(ch, "")
+            #Remove special characters from name
+            for ch in special_chars:
+                set_name = set_name.replace(ch, "")
+                set_theme = set_theme.replace(ch, "")
 
-                # Check to see if there are multiple versions/books for set
-                if len(instructions) > 1 and bool(re.search('(\s1/|BOOK \d( |$))', instructions[0]['description'])):
+            # Get instruction links
+            wanted_instructions = []
+            grid = web_response.html.find('.c-card')
+            for element in grid:
+                booklet_link = next(iter(element.links))
+
+                # Check to see if link is one we want
+                if re.search('\d.pdf', booklet_link):
+                    wanted_instructions.append(booklet_link)
+            
+            # Get set image
+            grid_item = web_response.html.find('.c-card__img', first=True).html
+            set_image = re.search('https:.*(jpg|JPG|png|PNG)', grid_item).group(0)
+
+            # Pretty up file name and path
+            formatted_set_name = "{} - {} ({})".format(set_id, set_name, set_year)
+            set_directory = "{}{}/{}".format(storage_root, set_theme, formatted_set_name)
+
+            # Check download path, if it exists skip download
+            if not os.path.isdir(set_directory):
+                logging.info("Downloading data for {}".format(set_id))
+                os.makedirs(set_directory)
+
+                # Download items from LEGO site
+                # Grab all wanted instruction books
+                for i in range(len(wanted_instructions)):
                     try:
-                        version = re.search('[vV](er)?(ER)?[sS]?.? ?\d\d', instructions[0]['description']).group(0)
+                        urllib.request.urlretrieve(wanted_instructions[i], "{}/{}-#{}{}".format(set_directory, formatted_set_name, i+1, ".pdf"))
                     except:
-                        # No version format in description
-                        version = ""
-                    wanted_version_locs = []
-
-                    # Find the location of same version books
-                    for k in range(len(instructions)):
-                        if version in instructions[k]["description"]:
-                            wanted_version_locs.append(k)
-                    
-                    # Parse book # from matching version descriptions
-                    for item in wanted_version_locs:
-                        try:
-                            # LEGO has some stupid naming conventions
-                            book_match = re.search('( 1?\d/\d{1,2}(\s|$)|BOOK \d( |$)| BOG\d)', instructions[item]["description"])
-                            book_total = book_match.group(0).replace(" ", "").replace("BOOK", "").replace("BOG", "")
-                            book = book_total.split('/')[0]
-                            instruction_list[instructions[item]["pdfLocation"]] = book
-                        except:
-                            logging.warning("Couldn't parse book description for set: {}".format(set_id))
-
-                    logging.debug("Downloading multiple books for: {}".format(set_id))
-                else:
-                    instruction_list[instructions[0]["pdfLocation"]] = "1"
-
-                if set_theme is None:
-                    logging.debug("Setting theme to Random")
-                    set_theme = "Random"
-
-                formatted_set_name = "{} - {} ({})".format(set_id, set_name, set_year)
-                set_directory = "{}{}/{}".format(storage_root, set_theme, formatted_set_name)
-
-                # Check download path, if it exists skip download
-                if not os.path.isdir(set_directory):
-                    logging.info("Downloading data for {}".format(set_id))
-                    os.makedirs(set_directory)
-
-                    # Download items from LEGO site
-                    # Grab all wanted instruction books
-                    for url in instruction_list:
-                        try:
-                            urllib.request.urlretrieve(url, "{}/{}-#{}{}".format(set_directory, formatted_set_name, instruction_list[url], ".pdf"))
-                        except:
-                            logging.warning("Problem downloading books for {}".format(set_id))
-                            continue
-                    try:
-                        urllib.request.urlretrieve(set_image, "{}/{}{}".format(set_directory, formatted_set_name, ".png"))
-                    except:
-                        logging.warning("Problem downloading image for {}".format(set_id))
+                        logging.warning("Problem downloading books for {}".format(set_id))
                         continue
-                else:
-                    logging.info("Skipping - file path aleady already exists for set: {}".format(set_id))
-                
+                try:
+                    urllib.request.urlretrieve(set_image, "{}/{}{}".format(set_directory, formatted_set_name, ".jpg"))
+                except:
+                    logging.warning("Problem downloading image for {}".format(set_id))
+                    continue
+            else:
+                logging.debug("Skipping - file path aleady already exists for set: {}".format(set_id))
+
             existing_list.append(current_set_clean)
         else:
-            logging.info("Previously downloaded {}".format(current_set_clean))
+            logging.debug("Previously downloaded {}".format(current_set_clean))
 
 if existing_list:
     f = open ('{}saved_sets.json'.format(storage_root), 'w')
-    simplejson.dump(existing_list, f)
+    json.dump(existing_list, f)
     f.close()
