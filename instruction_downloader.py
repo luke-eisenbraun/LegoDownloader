@@ -37,14 +37,17 @@ except IOError:
 # Lets download some files
 session = HTMLSession()
 for i in range(len(response_list)):
-     # Get clean set number from brickset
+    # Get clean set number from brickset
     current_set = re.search('"(\d*)-\d"', response_list[i])
+    backup_name = re.search('(?<=pdf",")(.*?)(?=",")', response_list[i]).group(1)
+    clean_backup_name = re.sub('^\d* ', '',backup_name)
+
     if current_set is not None:
         current_set_clean = current_set.group(1)
 
         # Check list to make sure we haven't downloaded before
         if current_set_clean not in existing_list:
-            web_response = session.get(lego_uri + current_set_clean)
+            web_response = session.get(lego_uri + current_set_clean, timeout=10)
             web_response.html.render()
             # Sleep helps render be much more reliable
             time.sleep(.5)
@@ -53,10 +56,17 @@ for i in range(len(response_list)):
             set_id = current_set_clean
             try:
                 raw_name = web_response.html.find('h1', first=True).text
+            except:
+                logging.warning("Set was not found on Lego.com: {}".format(set_id))
+                existing_list.append(current_set_clean)
+                continue
+
+            try:
                 set_name = raw_name.split(', ')[1]
             except:
-                logging.warning("Issue with set name on set: {}".format(set_id))
-                continue
+                set_name = clean_backup_name
+                logging.warning("Issue with set name on set, using backup: {} - {}".format(set_id, set_name))
+
             try:
                 set_theme = raw_name.split(', ')[2]
             except:
