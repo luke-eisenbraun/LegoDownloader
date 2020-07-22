@@ -18,6 +18,7 @@ special_chars = [u"\u003A", u"\u0022", "/", u"\u2122", u"\u00AE", "?"]
 
 # List of previously checked set_ids
 existing_list = []
+temp_list = []
 
 # Get all sets from Brinkset
 response = requests.get(brickset_export)
@@ -41,14 +42,16 @@ session = HTMLSession()
 for i in range(len(response_list)):
     # Get clean set number from brickset
     current_set = re.search('"(\d*)-\d"', response_list[i])
-    backup_name = re.search('(?<=pdf",")(.*?)(?=",")', response_list[i]).group(1)
-    clean_backup_name = re.sub('^\d* ', '',backup_name)
 
     if current_set is not None:
         current_set_clean = current_set.group(1)
 
+        # Lego is missing some names, fallback to brickset
+        backup_name = re.search('(?<=pdf",")(.*?)(?=",")', response_list[i]).group(1)
+        clean_backup_name = re.sub('^\d* ', '', backup_name)
+
         # Check list to make sure we haven't downloaded before
-        if current_set_clean not in existing_list:
+        if current_set_clean not in existing_list and current_set_clean not in temp_list:
             # Requests_HTMl seems to have an issue after a bunch of requests
             # so we'll refresh it every so often
             if i % 15 == 0:
@@ -63,8 +66,9 @@ for i in range(len(response_list)):
             try:
                 raw_name = web_response.html.find('h1', first=True).text
             except:
+                # Skip check just for this run. Check again on future runs (prevents newly added sets from being skipped)
                 logging.warning("Set was not found on Lego.com: {}".format(set_id))
-                existing_list.append(current_set_clean)
+                temp_list.append(current_set_clean)
                 continue
 
             try:
@@ -141,3 +145,4 @@ if existing_list:
     f = open ('{}saved_sets.json'.format(storage_root), 'w')
     json.dump(existing_list, f)
     f.close()
+    
