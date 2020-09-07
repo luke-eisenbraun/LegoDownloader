@@ -9,7 +9,7 @@ import time
 
 # Configs
 logging.basicConfig(level=logging.INFO)
-storage_root = "/mnt/user/Lego/"
+storage_root = "\\\\tower\Lego\\"
 brickset_export = 'https://brickset.com/exportscripts/instructions'
 lego_uri = "https://www.lego.com/en-us/service/buildinginstructions/"
 
@@ -63,6 +63,7 @@ for i in range(len(response_list)):
 
             # Get name, theme and release year from page
             set_id = current_set_clean
+            logging.debug("{}".format(set_id))
             try:
                 raw_name = web_response.html.find('h1', first=True).text
             except:
@@ -96,19 +97,18 @@ for i in range(len(response_list)):
 
             # Get instruction links
             wanted_instructions = []
-            grid = web_response.html.find('.c-card')
-            for element in grid:
-                booklet_link = next(iter(element.links))
+            booklets = web_response.html.find('.c-bi-booklet', first=True).links
 
+            if not booklets:
+                logging.warning("No instructions found for set, will try again later: {}".format(set_id))
+                continue
+
+            for booklet_link in booklets:
                 # Check to see if link is one we want
                 if re.search('\d.pdf', booklet_link):
                     wanted_instructions.append(booklet_link)
             
             # Get set image
-            if not grid:
-                logging.warning("No instructions found for set, will try again later: {}".format(set_id))
-                continue
-
             grid_item = web_response.html.find('.c-card__img', first=True).html
             set_image = re.search('https:.*(jpg|JPG|png|PNG)', grid_item).group(0)
 
