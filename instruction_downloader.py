@@ -13,6 +13,9 @@ storage_root = "\\\\tower\Lego\\"
 brickset_export = 'https://brickset.com/exportscripts/instructions'
 lego_uri = "https://www.lego.com/en-us/service/buildinginstructions/"
 
+# Pull from your cookies on lego.com
+UAID = ""
+
 # Special Characters [:, ", /, ™, ®, "?"]
 special_chars = [u"\u003A", u"\u0022", "/", u"\u2122", u"\u00AE", "?"]
 
@@ -47,8 +50,11 @@ for i in range(len(response_list)):
         current_set_clean = current_set.group(1)
 
         # Lego is missing some names, fallback to brickset
-        backup_name = re.search('(?<=pdf",")(.*?)(?=",")', response_list[i]).group(1)
-        clean_backup_name = re.sub('^\d* ', '', backup_name)
+        try:
+            backup_name = re.search('(?<=pdf",")(.*?)(?=",")', response_list[i]).group(1)
+            clean_backup_name = re.sub('^\d* ', '', backup_name)
+        except:
+            continue
 
         # Check list to make sure we haven't downloaded before
         if current_set_clean not in existing_list and current_set_clean not in temp_list:
@@ -88,6 +94,7 @@ for i in range(len(response_list)):
                 set_year = re.search('\d{4}', raw_year).group(0)
             except:
                 logging.warning("Issue with year, will try again later: {}".format(set_id))
+                temp_list.append(current_set_clean)
                 continue
 
             #Remove special characters from name
@@ -101,16 +108,20 @@ for i in range(len(response_list)):
 
             if not booklets:
                 logging.warning("No instructions found for set, will try again later: {}".format(set_id))
+                temp_list.append(current_set_clean)
                 continue
 
             for booklet_link in booklets:
                 # Check to see if link is one we want
-                if re.search('\d.pdf', booklet_link):
+                if re.search('\w.pdf', booklet_link):
                     wanted_instructions.append(booklet_link)
             
             # Get set image
-            grid_item = web_response.html.find('.c-card__img', first=True).html
-            set_image = re.search('https:.*(jpg|JPG|png|PNG)', grid_item).group(0)
+            grid_item = web_response.html.find('.c-card__img')
+            if len(grid_item) == 1:
+                set_image = re.search('https:.*(jpg|JPG|png|PNG)', grid_item[0].html).group(0)
+            else:
+                set_image = re.search('https:.*(jpg|JPG|png|PNG)', grid_item[1].html).group(0)
 
             # Pretty up file name and path
             formatted_set_name = "{} - {} ({})".format(set_id, set_name, set_year)
@@ -125,8 +136,11 @@ for i in range(len(response_list)):
                 # Grab all wanted instruction books
                 for i in range(len(wanted_instructions)):
                     try:
+                        opener = urllib.request.build_opener()
+                        opener.addheaders = [('Cookie',"UAID={}".format(UAID))]
+                        urllib.request.install_opener(opener)
                         urllib.request.urlretrieve(wanted_instructions[i], "{}/{}-#{}{}".format(set_directory, formatted_set_name, i+1, ".pdf"))
-                    except:
+                    except Exception as ex:
                         logging.warning("Problem downloading books for {}".format(set_id))
                         continue
                 try:
