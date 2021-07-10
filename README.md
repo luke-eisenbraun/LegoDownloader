@@ -9,6 +9,7 @@ example
 ![Folder Structure](https://github.com/luke-eisenbraun/LegoDownloader/blob/master/lego.png)
 
 To Run:
-  Change the storage root on [line 11](https://github.com/luke-eisenbraun/LegoDownloader/blob/master/instruction_downloader.py#L11)
+  Change the storage root on [line 12](https://github.com/luke-eisenbraun/LegoDownloader/blob/master/instruction_downloader.py#L12)
+  Grab your UAID from a lego.com cookie and set on [line 17](https://github.com/luke-eisenbraun/LegoDownloader/blob/master/instruction_downloader.py#L17)
   
 `python3 instruction_downloader.py`
